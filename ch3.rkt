@@ -28,3 +28,6 @@
 
 (define res1 (interp (parse case1)))
 (define res2 (interp (parse case2)))
+
+(test res1 7)
+(test res2 14)
