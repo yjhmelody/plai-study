@@ -38,6 +38,7 @@
         [multC (l r) (multC (subst what for l) (subst what for r))]
 ))
 
+; substitution model
 (define (interp [e : ExprC] [fds : (listof FunDefC)]) : number
   (type-case ExprC e
     [numC (n) n]
