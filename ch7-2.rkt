@@ -7,14 +7,14 @@
     [appC (fun : ExprC) (arg : ExprC)]
     [plusC (l : ExprC) (r : ExprC)]
     [multC (l : ExprC) (r : ExprC)]
-    ; func decl
-    [fdC (name : symbol) (arg : symbol) (body : ExprC)]
+    [lamC (arg : symbol) (body : ExprC)]
 )
 
 ; return value which is not always a number
 (define-type Value
     [numV (n : number)]
-    [funV (name : symbol) (arg : symbol) (body : ExprC)]
+    ; implment the closure
+    [closV (arg : symbol) (body : ExprC) (env : Env)]
 )
 
 ; interp-higher-order-function
@@ -25,20 +25,17 @@
       ; find the function body in env
       [appC (fun arg) 
       ; get the funV
-      (local ([define fd (interp fun env)])
-        (cond 
-            [(funV? fd)
-            ; get the funV return value
-            (interp (funV-body fd)
-                    ; The env only has its arg-symbol -> arg-expr-value
-                    (extend-env 
-                        (bind (funV-arg fd) (interp arg env)) mt-env)
-            )]
-            [else (error 'fd "is not a funtion")]
-        ))]
+      (local ([define fun-value (interp fun env)])
+        (interp (closV-body fun-value)
+            ; extend env with binding arg -> Value
+            (extend-env (bind (closV-arg fun-value) 
+                (interp arg env))
+                env))
+      )]
       [plusC (l r) (num+ (interp l env) (interp r env))]
       [multC (l r) (num* (interp l env) (interp r env))]
-      [fdC (name arg body) (funV name arg body)]
+      ; record all env
+      [lamC (arg body) (closV arg body env)]      
 ))
 
 (define (num+ [l : Value] [r : Value]) : Value
@@ -67,6 +64,19 @@
         [else (lookup name (rest env))]
     ))
 
-; (+ 10 ((lambda (_) 5) 10)) == 15
-(test (interp (plusC (numC 10) (appC (fdC 'const5 '_ (numC 5)) (numC 10))) mt-env) (numV 15))
-(test/exn (interp (appC (fdC 'f1 'x (appC (fdC 'f2 'y (plusC (idC 'x) (idC 'y))) (numC 4))) (numC 3)) mt-env) "name not found")
+
+(test (interp (plusC (numC 10) (numC 5))
+              mt-env)
+      (numV 15))
+
+(test (interp (appC (lamC 'x (appC (lamC 'y (plusC (idC 'x) (idC 'y)))
+                                   (numC 4)))
+                    (numC 3))
+              mt-env)
+      (numV 7))
+
+(test (interp (appC (lamC 'x (appC (lamC 'y (multC (idC 'x) (idC 'y))) 
+    (numC 2))) 
+    (numC 3)) 
+    mt-env) 
+    (numV 6))
