@@ -26,13 +26,16 @@
       [appC (fun arg) 
       ; get the funV
       (local ([define fd (interp fun env)])
+        (cond 
+            [(funV? fd)
             ; get the funV return value
             (interp (funV-body fd)
                     ; The env only has its arg-symbol -> arg-expr-value
                     (extend-env 
                         (bind (funV-arg fd) (interp arg env)) mt-env)
-            )
-      )]
+            )]
+            [else (error 'fd "is not a funtion")]
+        ))]
       [plusC (l r) (num+ (interp l env) (interp r env))]
       [multC (l r) (num* (interp l env) (interp r env))]
       [fdC (name arg body) (funV name arg body)]
