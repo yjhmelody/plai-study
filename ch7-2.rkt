@@ -80,3 +80,23 @@
     (numC 3)) 
     mt-env) 
     (numV 6))
+
+
+; 环境模型实际上实现了非捕获型替换
+; 以下例子会报错
+; (lambda (f)
+; (lambda (x)
+; (f 10)))    
+
+; (lambda (y) (+ x y))
+
+; (lambda (x)
+; ((lambda (y) (+ x y)) 10))    
+(test/exn
+    (interp
+        (appC
+            (appC (lamC 'f (lamC 'x (appC (idC 'f) (numC 10))))
+            (lamC 'y (plusC (idC 'x) (idC 'y))))
+      (numC 5))
+    mt-env)
+"name not found")
