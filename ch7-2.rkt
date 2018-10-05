@@ -1,5 +1,6 @@
 #lang plai-typed
 
+;; closure
 (define-type ExprC
     [numC (n : number)]
     [idC (s : symbol)]
@@ -100,3 +101,45 @@
       (numC 5))
     mt-env)
 "name not found")
+
+
+;; let: left-left-lambda sugar
+(define-type ExprS
+    [numS (n : number)]
+    [plusS (l : ExprS) (r : ExprS)]
+    [multS (l : ExprS) (r : ExprS)]
+    [idS (s : symbol)]
+    [appS (fun : ExprS) (arg : ExprS)]
+    [lamS (arg : symbol) (body : ExprS)]
+    [letS (name : symbol) (val : ExprS) (body : ExprS)])
+
+(define (desugar [e : ExprS]) : ExprC
+  (type-case ExprS e
+    [numS (n) (numC n)]
+    [plusS (l r) (plusC (desugar l) (desugar r))]
+    [multS (l r) (multC (desugar l) (desugar r))]
+    [idS (s) (idC s)]
+    [appS (fun arg) (appC (desugar fun) (desugar arg))]
+    [lamS (arg body) (lamC arg (desugar body))]
+    [letS (name val body) (appC (lamC name (desugar body)) (desugar val))]))
+
+(define (interp-sugar [expr : ExprS] [env : Env]) : Value
+    (interp (desugar expr) env))
+
+(test (interp-sugar (plusS (numS 10) (numS 5))
+                    mt-env)
+      (numV 15))
+
+(test (interp-sugar
+       (letS 'double (lamS 'x (plusS (idS 'x) (idS 'x)))
+             (appS (idS 'double) (numS 2)))
+       mt-env)
+      (numV 4))
+
+(test (interp-sugar
+       (letS 'double (lamS 'x (plusS (idS 'x) (idS 'x)))
+             (letS 'quadruple
+                   (lamS 'x (appS (idS 'double) (appS (idS 'double) (idS 'x))))
+                   (appS (idS 'quadruple) (numS 2))))
+       mt-env)
+      (numV 8))
