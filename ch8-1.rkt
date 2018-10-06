@@ -50,7 +50,7 @@
     [lamC (arg : symbol) (body : ExprC)]
     [boxC (arg : ExprC)]
     [unboxC (arg : ExprC)]
-    ; [setboxC (b : ExprC) (v : ExprC)]
+    [setboxC (b : ExprC) (val : ExprC)]
     ; begin syntax
     [seqC (b1 : ExprC) (b2 : ExprC)]
 )
@@ -67,34 +67,75 @@
 
 ; interpreter's return value
 (define-type Result 
-    [v*s (v : Value) (s : Storage)])
+    [v*s (val : Value) (store : Store)])
 
-; interp-higher-order-function
+; 贮存传递模式（store-passing style）
+; 贮存是线式传递的：所有的分支并不使用同一个贮存，
+; 前一个分支产生的贮存后一个分支使用，最后一个分支的贮存就是总的返回贮存。
+; 这种风格被称作贮存传递模式（store-passing style）。
 (define (interp [expr : ExprC] [env : Env] [store : Store]) : Result
     (type-case ExprC expr
       [numC (n) (v*s (numV n) store)]
       [idC (s) (v*s (fetch (lookup s env) store) store)]
       ; find the function body in env
-      [appC (fun arg) 
-      ; get the funV
-      (let ([fun-value (interp fun env store)])
-        (interp (closV-body fun-value)
-            ; extend env with binding arg -> Value
-            (extend-env (bind (closV-arg fun-value) 
-                (interp arg env store))
-                env 
-                store))
+      [appC (f arg) (type-case Result (interp f env store)
+            [v*s (f-val f-store) (type-case Result (interp arg env f-store)
+                [v*s (arg-val arg-store) (let ([where (new-loc)])
+                    (interp 
+                        (closV-body f-val) 
+                        ; 添加参数到新地址的映射
+                        (extend-env 
+                            (bind (closV-arg f-val) where)
+                            (closV-env f-val)
+                        )
+                        ; 添加新的贮存
+                        (override-store (cell where arg-val) arg-store)
+                    )
+                )]
+            )]
       )]
-      [plusC (l r) (num+ (interp l env store) (interp r env store))]
-      [multC (l r) (num* (interp l env store) (interp r env store))]
+      ; we need to consider that left and right both produce box data
+      [plusC (l r) (type-case Result (interp l env store)
+                    [v*s (l-val l-store) (type-case Result (interp r env l-store)
+                        [v*s (r-val r-store) (v*s (num+ l-val r-val) r-store)]    
+                    )]
+      )]
+      [multC (l r) (type-case Result (interp l env store)
+                    [v*s (l-val l-store) (type-case Result (interp r env l-store)
+                        [v*s (r-val r-store) (v*s (num* l-val r-val) r-store)]    
+                    )]
+      )]
       ; record all env
       [lamC (arg body) (v*s (closV arg body env) store)]
       ; right is a expr
-      [boxC (arg) (boxV (interp arg env store))]
-      [unboxC (arg) (fetch (boxV-loc (interp arg env store)))]
+      ; box need to record the store address 
+      [boxC (arg) (type-case Result (interp arg env store)
+                    [v*s (arg-val arg-store)
+                    (let ([where (new-loc)])
+                        (v*s (boxV where)
+                            (override-store (cell where arg-val)
+                                arg-store)
+                        )
+                    )]
+      )]
+      [unboxC (arg) (type-case Result (interp arg env store)
+            [v*s (arg-val arg-store) (v*s (fetch (boxV-loc arg-val) arg-store) arg-store)]
+      )]
+      [setboxC (b val) (type-case Result (interp b env store)
+            [v*s (b-val b-store) (type-case Result (interp val env b-store)
+                [v*s (val-val val-store)
+                    (v*s val-val 
+                        (override-store 
+                            (cell (boxV-loc b-val) val-val)
+                            val-store
+                        )
+                    ) 
+                ]
+            )]
+      )]
       ; when eval the b2, using b1's returned store
-      [seqC (b1 b2) (type-case Result (interp b1 env store))])
-                    (v*s (b1-val b1-store) (interp b2 env b1-store))]
+      [seqC (b1 b2) (type-case Result (interp b1 env store)
+                    (v*s (b1-val b1-store) (interp b2 env b1-store)))]
 ))
 
 (define (num+ [l : Value] [r : Value]) : Value
@@ -145,6 +186,8 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ; test box and unbox
-(test
-(interp (unboxC (boxC (plusC (numC 5) (numC 10)))) mt-env mt-store)
+(test (v*s-val (interp 
+        (unboxC (boxC (plusC (numC 5) (numC 10)))) 
+            mt-env 
+            mt-store))
 (numV 15))
