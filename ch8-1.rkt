@@ -185,9 +185,24 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-; test box and unbox
+; test box and unbox and setbox
 (test (v*s-val (interp 
-        (unboxC (boxC (plusC (numC 5) (numC 10)))) 
-            mt-env 
-            mt-store))
-(numV 15))
+        (unboxC (boxC (plusC 
+                        (setboxC (boxC (numC 5)) (numC 10))
+                        (numC 10)
+                    )
+                )
+        )
+        mt-env 
+        mt-store))
+(numV 20))
+
+; test for seq
+(test (v*s-val (interp
+        (seqC 
+            (plusC (numC 1) (numC 2))
+            (multC (numC 2) (numC 5))
+        )
+        mt-env 
+        mt-store))
+(numV 10))
