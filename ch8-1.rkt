@@ -10,7 +10,6 @@
     (set-box! (second l) 2)
     l)))
     
-
 ; counter
 (define new-loc
     (let ([n (box 0)])
@@ -39,7 +38,9 @@
     )
 )
 
+;;;;;;;;;;;;;;;;;;;;;;;;
 
+; Express ast
 (define-type ExprC
     [numC (n : number)]
     [idC (s : symbol)]
@@ -61,33 +62,39 @@
     ; closure
     [closV (arg : symbol) (body : ExprC) (env : Env)]
     ; box
-    [boxV (v : Value)]
+    [boxV (loc : Location)]
 )
 
+; interpreter's return value
+(define-type Result 
+    [v*s (v : Value) (s : Storage)])
+
 ; interp-higher-order-function
-(define (interp [expr : ExprC] [env : Env]) : Value
+(define (interp [expr : ExprC] [env : Env] [store : Store]) : Result
     (type-case ExprC expr
-      [numC (n) (numV n)]
-      [idC (s) (lookup s env)]
+      [numC (n) (v*s (numV n) store)]
+      [idC (s) (v*s (fetch (lookup s env) store) store)]
       ; find the function body in env
       [appC (fun arg) 
       ; get the funV
-      (let ([fun-value (interp fun env)])
+      (let ([fun-value (interp fun env store)])
         (interp (closV-body fun-value)
             ; extend env with binding arg -> Value
             (extend-env (bind (closV-arg fun-value) 
-                (interp arg env))
-                env))
+                (interp arg env store))
+                env 
+                store))
       )]
-      [plusC (l r) (num+ (interp l env) (interp r env))]
-      [multC (l r) (num* (interp l env) (interp r env))]
+      [plusC (l r) (num+ (interp l env store) (interp r env store))]
+      [multC (l r) (num* (interp l env store) (interp r env store))]
       ; record all env
-      [lamC (arg body) (closV arg body env)]
+      [lamC (arg body) (v*s (closV arg body env) store)]
       ; right is a expr
-      [boxC (arg) (boxV (interp arg env))]
-      [unboxC (arg) (boxV-v (interp arg env))]
-      [seqC (b1 b2) (let ([v (interp b1 env)])
-                    (interp b2 env))]
+      [boxC (arg) (boxV (interp arg env store))]
+      [unboxC (arg) (fetch (boxV-loc (interp arg env store)))]
+      ; when eval the b2, using b1's returned store
+      [seqC (b1 b2) (type-case Result (interp b1 env store))])
+                    (v*s (b1-val b1-store) (interp b2 env b1-store))]
 ))
 
 (define (num+ [l : Value] [r : Value]) : Value
@@ -102,32 +109,42 @@
         [else (error 'num* "one argument was not a number")])
 )
 
-; Env
+; Bind name with location
 (define-type Binding
-    [bind (name : symbol) (val : Value)])
+    [bind (name : symbol) (loc : Location)])
 (define-type-alias Env (listof Binding))
 (define mt-env empty)
 (define extend-env cons)
 
-(define (lookup [name : symbol] [env : Env]) : Value
-    (cond 
-        [(empty? env) (error 'lookup "name not found")]
-        [(symbol=? name (bind-name (first env))) (bind-val (first env))]
-        [else (lookup name (rest env))]
-    ))
-
-
 ; Store
 (define-type-alias Location number) ; address
 (define-type Storage
-    [cell (location : Location) (val : Value)]
+    [cell (loc : Location) (val : Value)]
 )
 (define-type-alias Store (listof Storage))
 (define mt-store empty)
-(define override-store cons)
+(define override-store cons) ; override store
+
+; lookup name's location from env
+(define (lookup [name : symbol] [env : Env]) : Location
+    (cond 
+        [(empty? env) (error 'lookup "name not found")]
+        [(symbol=? name (bind-name (first env))) (bind-loc (first env))]
+        [else (lookup name (rest env))]
+    ))
+
+; fetch value from some location of store
+(define (fetch [loc : Location] [store : Store]) : Value 
+    (cond
+        [(empty? store) (error 'fetch "loc not found")]
+        [(= loc (cell-loc (first store))) (cell-val (first store))]
+        [else (fetch loc (rest store))] 
+    ))
 
 
-; test box unbox
+;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; test box and unbox
 (test
-(interp (unboxC (boxC (plusC (numC 5) (numC 10)))) mt-env)
+(interp (unboxC (boxC (plusC (numC 5) (numC 10)))) mt-env mt-store)
 (numV 15))
